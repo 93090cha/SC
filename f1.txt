@@ -1,4 +1,123 @@
-a
-b
-c
-d
+# ROS 설치(Melodic)
+sudo sh -c 'echo "deb http://packages.ros.org/ros/ubuntu $(lsb_release -sc) main" > /etc/apt/sources.list.d/ros-latest.list'
+
+sudo apt-key adv --keyserver 'hkp://keyserver.ubuntu.com:80' --recv-key C1CF6E31E6BADE8868B172B4F42ED6FBAB17C654
+
+sudo apt-get update
+sudo apt-get install ros-melodic-ros-base # 용량제한으로 ros base만 설치
+sudo apt-get install python-rosdep python-rosinstall-generator python-wstool build-essential #rosdep init를 위한 라이브러리 설치
+sudo apt-get -y install ros-melodic-async-web-server-cpp ros-melodic-can-msgs ros-melodic-nmea-msgs ros-melodic-nmea-navsat-driver ros-melodic-usb-cam #3rd party를 위한 라이브러리 설치
+sudo rosdep init
+rosdep update
+sudo apt-get install ros-melodic-catkin python-catkin-tools # Catkin tool 설치
+echo -e “source /opt/ros/melodic/setup.bash” >> ‘/home/sc/.bashrc’
+echo -e “source /opt/ros/melodic/setup.bash” >> ‘/home/sc/.profile’
+source /home/sc/.bashrc
+source /home/sc/.profile
+
+# Socket CAN Driver 설치
+sudo apt-get update
+sudo apt-get install can-utils
+
+# Sgr_Prod 설치
+sudo passwd root # Root 암호는 1로 설정
+sudo apt-get update
+sudo apt-get openssh-server
+sudo vi etc/ssh/sshd_config # PermitRootLogin prohibit을  찾아서 오른쪽에 값을 yes로 변경
+
+PermitRootLogin yes
+
+systemctl restart sshd
+sudo su
+cd
+git clone https://bitbucket.org/springgos/sgr_prod.git
+cd sgr_prod
+/root/sgr_prod
+git checkout hw2.0
+vi .env
+
+ANDROID_UDP_ADDRESS=
+VEHICLE_ID=
+VEHICLE_NUMBER=
+VEHICLE_TYPE=
+VEHICLE_PK=
+ROSBAG_FILE=
+
+sh booting.sh
+docker-compose –version
+docker-compose pull
+pm2 start pm2.json
+pm2 logs # pm2를 통해 driver와 master 진행상황 확인
+pm2 startup # 위에 진행상황이 이상이 없을 시 명령어 실행
+
+# LTE Modem set
+
+sudo apt-get update
+sudo apt-get install wvdial
+sudo vi /etc/wvdial.conf #새롭게 입력
+
+"""
+[Dialer Defaults]
+Init1 = ATZ
+Init2 = ATQ0 V1 E1 S0=0 &C1 &D2 +FCLASS=0
+Init3 = AT&F
+Init4 = AT+QSIMDET=1,0
+Init5 = AT+QSIMSTAT=1
+Init6 = AT+QSIMSTAT?
+Username = quectel
+Phone = *99#
+Password = ***
+Modem Type = Analog Modem
+Baud = 9600
+New PPPD = yes
+Modem = /dev/ttyUSB2
+ISDN = 0
+; Phone = <Target Phone Number>
+; Password = <Your Password>
+; Username = <Your Login Name>
+"""
+
+sudo wvdialconf
+sudo vi /etc/ppp/options #active-filter <filter-expression>하단에 입력
+
+#active-filter <filter-expression>
+noipdefault
+ipcp-accept-local
+ipcp-accept-remote
+defaultroute
+noauth
+crtscts
+debug
+
+# SGR200 의 home 디렉토리에 실행 스크립트 생성
+
+vi /home/sc/springgo_router.sh
+sudo chmod +x /home/sc/ springgo_router.sh
+
+#!/bin/bash
+user=$(ls /home)
+ws=/home/$user/ws
+mode=0 #mode=0 is byungchul, mode=1 is taehyeon, you have to set before use
+if [ ${mode} == 1 ] ; then
+# Socket CAN setup
+/usr/bin/slcand -o -c -s5 /dev/ttyACM0 can0
+/usr/bin/slcand -o -c -s6 /dev/ttyACM1 can1
+/usr/bin/slcand -o -c -s5 /dev/ttyACM2 can2
+
+sleep 3
+/sbin/ifconfig can0 up
+/sbin/ifconfig can1 up
+/sbin/ifconfig can2 up
+
+sleep 3
+# run Springgo Router
+source /opt/ros/melodic/setup.bash
+source $ws/devel/setup.bash
+roslaunch springgo_router navya.launch
+fi
+
+# eth0 down when use SGR200#
+if [ "${user}" == "sc" ] ; then
+/sbin/ifconfig eth0 down
+fi
+
